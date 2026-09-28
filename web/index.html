@@ -53,6 +53,17 @@
   #meta { color: var(--dim); font-size: 12px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 26px 0 8px; }
   td.entry { font-family: Consolas, monospace; font-size: 12px; color: var(--dim); }
+  #logpanel { display: none; position: fixed; left: 0; right: 0; bottom: 0; height: 38%;
+              background: var(--bg); border-top: 1px solid var(--line);
+              flex-direction: column; z-index: 5; }
+  #loghead { display: flex; align-items: center; gap: 12px; padding: 6px 14px;
+             background: var(--panel); border-bottom: 1px solid var(--line); }
+  #logtitle { font-family: Consolas, monospace; font-size: 13px; }
+  #logbody { overflow: auto; padding: 8px 14px; }
+  .logsrc { color: var(--dim); font-size: 11px; text-transform: uppercase;
+            letter-spacing: .06em; margin: 6px 0 2px; }
+  #logbody pre { margin: 0 0 10px; font: 12px/1.35 Consolas, monospace;
+                 white-space: pre-wrap; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -75,6 +86,14 @@
   <thead><tr><th>Project</th><th>Description</th><th>Run</th></tr></thead>
   <tbody id="toolRows"></tbody>
 </table>
+<div id="logpanel">
+  <div id="loghead">
+    <span id="logtitle"></span>
+    <span class="spacer"></span>
+    <button onclick="closeLog()">Close</button>
+  </div>
+  <div id="logbody"></div>
+</div>
 <script>
 const rowsEl = document.getElementById('rows');
 const toolRowsEl = document.getElementById('toolRows');
@@ -123,6 +142,34 @@ async function all(act) {
   setTimeout(refresh, 700);
 }
 
+let logSid = null;
+
+async function showLog(sid) {
+  logSid = (logSid === sid) ? null : sid;
+  await fetchLog();
+}
+
+function closeLog() {
+  logSid = null;
+  document.getElementById('logpanel').style.display = 'none';
+}
+
+async function fetchLog() {
+  const panel = document.getElementById('logpanel');
+  if (!logSid) { panel.style.display = 'none'; return; }
+  const r = await fetch(`/api/services/${logSid}/log?lines=200`);
+  const d = await r.json();
+  document.getElementById('logtitle').textContent = `log - ${logSid}`;
+  const body = document.getElementById('logbody');
+  body.innerHTML = (d.sources && d.sources.length)
+    ? d.sources.map(src =>
+        `<div class="logsrc">${esc(src.label)} - ${esc(src.path)}</div>` +
+        `<pre>${esc(src.lines.join('\n')) || '(empty)'}</pre>`).join('')
+    : '<div class="logsrc">no log yet - the hub writes logs/&lt;id&gt;.log when it starts the service</div>';
+  panel.style.display = 'flex';
+  body.scrollTop = body.scrollHeight;
+}
+
 function renderRow(s) {
   const tr = document.createElement('tr');
   tr.className = 'st-' + s.state;
@@ -141,6 +188,9 @@ function renderRow(s) {
     } else {
       btns = '<span style="color:var(--dim);font-size:12px">manual</span>';
     }
+  }
+  if (s.managed || s.is_self) {
+    btns += `<button onclick="showLog('${s.id}')">Log</button>`;
   }
   tr.innerHTML =
     `<td><span class="dot"></span><span class="st-word">${word}</span></td>` +
@@ -170,6 +220,7 @@ async function refresh() {
       toolRowsEl.dataset.done = '1';
     }
     metaEl.textContent = 'updated ' + new Date().toLocaleTimeString();
+    if (logSid) fetchLog();
   } catch (e) {
     metaEl.textContent = 'hub unreachable';
   }

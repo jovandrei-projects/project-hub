@@ -42,7 +42,8 @@
                     "-File", "VocalCoach\\scripts\\practice-server.ps1",
                     "start", "-NoBrowser"],
         "cwd": "singing-practice-tools"
-      }
+      },
+      "log_instance": "singing-practice-tools/VocalCoach/.runtime/web-app-8731.instance"
     },
     {
       "id": "model-compare",

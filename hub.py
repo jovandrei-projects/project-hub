@@ -15,6 +15,9 @@ How it works:
   foreign and left alone.
 - Start checks the port first: Windows lets two Pythons share one port
   (SO_REUSEADDR), so "already answers" must mean "do not spawn again".
+- Services are spawned windowless (CREATE_NO_WINDOW) with stdout/stderr
+  appended to logs/<id>.log; the UI's Log button tails those files. A
+  service that keeps its own log (VocalCoach) is pointed at via services.json.
 - POST endpoints require the X-Hub-Request header so a random browser page
   cannot drive them cross-origin.
 """
@@ -32,15 +35,20 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 ROOT = Path(__file__).resolve().parent
 PROJECTS = ROOT.parent
 REGISTRY_PATH = ROOT / "services.json"
 INDEX_HTML = ROOT / "web" / "index.html"
+LOG_DIR = ROOT / "logs"
 
 PORT_DEFAULT = 8760
 START_GRACE_SECONDS = 90  # disk-cleanup warms its cache for ~20 s
 STOP_WAIT_SECONDS = 10
+LOG_TAIL_MAX = 1000
+LOG_TAIL_BYTES = 512 * 1024
+LOG_ROTATE_BYTES = 4 * 1024 * 1024
 
 KILLABLE_IMAGES = {
     "python.exe", "pythonw.exe", "python3.exe", "py.exe",
@@ -94,6 +102,17 @@ def image_name(pid):
         if len(row) >= 2 and row[1].strip() == str(pid):
             return row[0]
     return None
+
+
+def tail_lines(path, n, max_bytes=LOG_TAIL_BYTES):
+    """Last n lines of a file, reading at most max_bytes from the end."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return []
+    if len(data) > max_bytes:
+        data = data[-max_bytes:]
+    return data.decode("utf-8", errors="replace").splitlines()[-n:]
 
 
 class Hub:
@@ -166,11 +185,15 @@ class Hub:
         env.update(spec.get("env", {}))
         kwargs = {}
         if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        logf = self._open_service_log(sid)
         try:
-            subprocess.Popen(cmd, cwd=str(cwd), env=env, **kwargs)
+            subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
+                             stdout=logf, stderr=subprocess.STDOUT, **kwargs)
         except OSError as exc:
+            logf.close()
             return 500, {"ok": False, "error": str(exc)}
+        logf.close()  # the child keeps its inherited handle
         with self.lock:
             self.start_requested[sid] = time.time()
         return 200, {"ok": True, "note": "start requested"}
@@ -240,6 +263,58 @@ class Hub:
             results[s["id"]] = res
         return results
 
+    def _open_service_log(self, sid):
+        """Append-mode handle for the service's captured console output, with
+        a start banner and a size cap so a chatty service cannot grow it
+        forever. The file lives in logs/<id>.log next to hub.py."""
+        LOG_DIR.mkdir(exist_ok=True)
+        path = LOG_DIR / f"{sid}.log"
+        try:
+            if path.stat().st_size > LOG_ROTATE_BYTES:
+                tail = path.read_bytes()[-LOG_ROTATE_BYTES // 4:]
+                path.write_bytes(b"... hub truncated older output ...\n" + tail)
+        except OSError:
+            pass
+        f = open(path, "ab")
+        f.write(f"\n===== hub start {time.strftime('%Y-%m-%d %H:%M:%S')} =====\n".encode())
+        f.flush()
+        return f
+
+    def _service_log_path(self, s):
+        """A service's own log, if services.json says where it lives:
+        'log' is a fixed path relative to C:\\Projects, 'log_instance' is a
+        KEY=value file whose LOG= line holds it (VocalCoach)."""
+        if s.get("log"):
+            return PROJECTS / s["log"]
+        if s.get("log_instance"):
+            try:
+                for line in (PROJECTS / s["log_instance"]).read_text(
+                        encoding="ascii", errors="replace").splitlines():
+                    if line.startswith("LOG="):
+                        return Path(line[4:].strip())
+            except OSError:
+                pass
+        return None
+
+    def log_tail(self, sid, lines=150):
+        s = self.by_id.get(sid)
+        if not s:
+            return 404, {"ok": False, "error": f"unknown service {sid}"}
+        try:
+            lines = max(1, min(int(lines), LOG_TAIL_MAX))
+        except (TypeError, ValueError):
+            lines = 150
+        sources = []
+        own = self._service_log_path(s)
+        if own and own.exists():
+            sources.append({"label": "service log", "path": str(own),
+                            "lines": tail_lines(own, lines)})
+        hub_log = LOG_DIR / f"{sid}.log"
+        if hub_log.exists():
+            sources.append({"label": "console output", "path": str(hub_log),
+                            "lines": tail_lines(hub_log, lines)})
+        return 200, {"ok": True, "sources": sources}
+
 
 class Handler(BaseHTTPRequestHandler):
     hub = None
@@ -250,27 +325,39 @@ class Handler(BaseHTTPRequestHandler):
 
     def _json(self, code, obj):
         body = json.dumps(obj).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:
+            pass  # client went away mid-write; a closed tab aborts the poll
 
     def _html(self, path):
         body = path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:
+            pass
 
     def do_GET(self):
-        if self.path == "/":
+        url = urlparse(self.path)
+        parts = url.path.strip("/").split("/")
+        if url.path == "/":
             self._html(INDEX_HTML)
-        elif self.path == "/api/ping":
+        elif url.path == "/api/ping":
             self._json(200, {"app": "project-hub", "port": self.hub.port})
-        elif self.path == "/api/status":
+        elif url.path == "/api/status":
             self._json(200, self.hub.snapshot())
+        elif len(parts) == 4 and parts[:2] == ["api", "services"] and parts[3] == "log":
+            lines = parse_qs(url.query).get("lines", ["150"])[0]
+            code, res = self.hub.log_tail(parts[2], lines)
+            self._json(code, res)
         else:
             self.send_error(404)
 
@@ -294,6 +381,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 
+class HubHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # A client that vanished mid-response (closed tab aborting the 2.5 s
+        # poll) surfaces here as WinError 10053/10054 - noise, not a fault.
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            return
+        super().handle_error(request, client_address)
+
+
 def already_running(port):
     """True if a hub is already answering on the port. A second hub must not
     bind: on Windows SO_REUSEADDR lets two listeners share one port."""
@@ -312,7 +410,15 @@ def main():
     ap = argparse.ArgumentParser(description="project-hub service index")
     ap.add_argument("--port", type=int, default=PORT_DEFAULT)
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--start-all", action="store_true",
+                    help="start every managed service once the hub is up")
     args = ap.parse_args()
+
+    if sys.stdout is None:
+        # pythonw (start-hub-hidden.vbs) has no console - keep a log instead.
+        LOG_DIR.mkdir(exist_ok=True)
+        sys.stdout = sys.stderr = open(
+            LOG_DIR / "hub.log", "a", encoding="utf-8", buffering=1)
 
     url = f"http://127.0.0.1:{args.port}/"
     if already_running(args.port):
@@ -323,11 +429,12 @@ def main():
 
     hub = Hub(args.port)
     Handler.hub = hub
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.daemon_threads = True
+    server = HubHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"project-hub: {url}")
     if not args.no_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    if args.start_all:
+        threading.Thread(target=hub.start_all, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
