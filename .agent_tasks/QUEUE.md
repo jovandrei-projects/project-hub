@@ -18,7 +18,7 @@ Open work that exists but has no folder, so nobody has to go looking for it.
 `ROADMAP.md`'s unchecked items are the default source of the next task when
 this table is empty.
 
-- Phase 2 items in `ROADMAP.md` (log tail in UI, hub-started tracking, run-at-login)
+- Phase 2 items in `ROADMAP.md` (hub-started tracking)
 
 A task gets a folder here when it is going to be worked on across more than
 one session. Until then the roadmap is enough, and duplicating it would only

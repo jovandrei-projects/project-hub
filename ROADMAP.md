@@ -8,7 +8,7 @@ One phase at a time, in order. Mark items `[x]` as they land.
 |---|---|
 | How is a service "running" decided? | TCP connect to `127.0.0.1:<port>` - honest, survives hub restarts, no PID bookkeeping. |
 | How does stop find the process? | `netstat -ano` listener PIDs on the port; images outside `KILLABLE_IMAGES` are refused, not killed. |
-| Why does each service get a console window? | `CREATE_NEW_CONSOLE` keeps logs visible and the service alive if the hub exits. |
+| Why don't services show console windows? | `CREATE_NO_WINDOW` keeps them alive without clutter; stdout/stderr is appended to `logs/<id>.log` and tailed from the UI. |
 | Where does the service list live? | `services.json` - one file, edited when a project is added or removed. |
 | Which port? | 8760, per the root port registry in `C:\Projects\AGENTS.md`. |
 
@@ -23,9 +23,9 @@ One phase at a time, in order. Mark items `[x]` as they land.
 
 ## Phase 2 - optional polish (pick up only if wanted)
 
-- [ ] Surface a service's own log tail in the UI ( VocalCoach keeps one in `.runtime`; others print to their console windows )
+- [x] Log tail in the UI: per-row Log button tails `logs/<id>.log`; VocalCoach's own `.runtime` log is found through `log_instance` in services.json
 - [ ] Remember "was started by hub" so stop could warn before killing a user-started instance
-- [ ] Run-at-login entry if the hub should always be up
+- [x] Run at login: `start-hub-hidden.vbs` via `Startup\project-hub.lnk` runs `pythonw hub.py --no-browser --start-all`; hub logs to `logs/hub.log` under pythonw
 
 ---
 

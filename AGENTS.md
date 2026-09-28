@@ -35,13 +35,23 @@ restate a phase's status here.
 ```
 python hub.py                   http://127.0.0.1:8760, opens a browser
 python hub.py --no-browser      same, no browser tab
-start-hub.bat                   double-click entry point
+python hub.py --start-all       also starts every managed service
+start-hub.bat                   double-click entry point (visible console)
+start-hub-hidden.vbs            no window; the Startup-folder shortcut
+                                project-hub.lnk runs this at every login
 ```
+
+To stop auto-starting at login, delete `project-hub.lnk` from the Startup
+folder (`shell:startup` in Explorer). To auto-start only the hub, remove
+`--start-all` from the vbs.
 
 Adding a service = one entry in `services.json` (`id`, `name`, `description`,
 `port`, `url`, `start.command` + `start.cwd` relative to `C:\Projects`,
 optional `start.env`). `"python"` as the first command word resolves to the
-interpreter running the hub. Projects without a server go in `tools`.
+interpreter running the hub. A service's stdout/stderr lands in
+`logs/<id>.log`; if it keeps its own log elsewhere, point at it with `log`
+(path relative to `C:\Projects`) or `log_instance` (a KEY=value file holding
+a `LOG=` line). Projects without a server go in `tools`.
 
 ## Traps
 
@@ -51,10 +61,12 @@ interpreter running the hub. Projects without a server go in `tools`.
    `singing-practice-tools` documented this as its trap 11.
 2. **`stop` on a port answers only after the socket closes** - poll it for a
    few seconds before declaring success; taskkill is asynchronous.
-3. **Each service opens its own console window** (`CREATE_NEW_CONSOLE`) so
-   its log stays visible and it survives the hub exiting. Output encoding is
-   forced via `PYTHONIOENCODING=utf-8` because every service here can print
-   non-cp1252 text.
+3. **Services run windowless** (`CREATE_NO_WINDOW`) with stdout/stderr
+   appended to `logs/<id>.log`, which the UI's Log button tails. They still
+   survive the hub exiting. `PYTHONIOENCODING=utf-8` is forced because every
+   service here can print non-cp1252 text. VocalCoach's real log is written
+   by `practice-server.ps1` into `VocalCoach/.runtime`; the hub finds the
+   path through `log_instance` in services.json.
 4. **`wifi-network-monitor` needs `MONITOR_NO_BROWSER=1`** when spawned, or it
    opens a browser tab every time (`webbrowser.open` is unconditional
    otherwise). `disk-cleanup` and `VocalCoach` take `--no-browser` /
@@ -69,6 +81,10 @@ interpreter running the hub. Projects without a server go in `tools`.
 7. **POSTs require `X-Hub-Request: 1`.** Without it a random browser page
    could drive the kill endpoints cross-origin; browsers cannot set a custom
    header cross-origin without a CORS preflight we never answer.
+8. **A closed browser tab aborts in-flight `/api/status` writes** - the
+   resulting WinError 10053/10054 traceback is the client disappearing, not a
+   bug. `_json`/`_html` swallow ConnectionError and `handle_error` drops
+   whatever else it leaves.
 
 ## The task workspace - read before starting work
 
