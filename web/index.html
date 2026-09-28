@@ -36,8 +36,10 @@
   td.url a { color: var(--accent); text-decoration: none; }
   td.url a:hover { text-decoration: underline; }
   td.url a.dead { color: var(--dim); pointer-events: none; }
+  td.name { white-space: nowrap; }
   td.desc { color: var(--dim); font-size: 13px; }
   td.pid { font-family: Consolas, monospace; font-size: 12px; color: var(--dim); white-space: nowrap; }
+  td.status { white-space: nowrap; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
   .st-up .dot { background: var(--up); }
   .st-starting .dot { background: var(--starting); animation: pulse 1s infinite alternate; }
@@ -47,6 +49,7 @@
   .st-up .st-word { color: var(--up); }
   .st-starting .st-word { color: var(--starting); }
   .st-down .st-word { color: var(--down); }
+  .rowbtns { white-space: nowrap; }
   .rowbtns button { padding: 3px 10px; font-size: 12px; margin-right: 6px; }
   #notice { margin: 0 0 14px; padding: 9px 14px; border-radius: 6px; background: #3a2a1e;
             color: var(--starting); font-size: 13px; display: none; white-space: pre-wrap; }
@@ -194,8 +197,8 @@ function renderRow(s) {
     btns += `<button onclick="showLog('${s.id}')">Log</button>`;
   }
   tr.innerHTML =
-    `<td><span class="dot"></span><span class="st-word">${word}</span></td>` +
-    `<td>${esc(s.name)}</td>` +
+    `<td class="status"><span class="dot"></span><span class="st-word">${word}</span></td>` +
+    `<td class="name">${esc(s.name)}</td>` +
     `<td class="url">${link}</td>` +
     `<td class="port">${s.port}</td>` +
     `<td class="pid">${pids}</td>` +
