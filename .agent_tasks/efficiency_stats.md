@@ -13,6 +13,7 @@ new input, so the column to watch is **new input**.
 | project-hub / initial build | n/a | n/a | n/a | n/a |
 | project-hub / hidden services, log tail, run-at-login | ~20 | n/a | n/a | n/a |
 | project-hub / status-cell layout fix | ~4 | n/a | n/a | n/a |
+| project-hub / loading placeholder row | ~3 | n/a | n/a | n/a |
 
 If the figures are not available at the end of a session, write the row with
 the counts left as `n/a` rather than skipping it, so the session is still

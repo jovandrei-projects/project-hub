@@ -45,6 +45,12 @@
   .st-starting .dot { background: var(--starting); animation: pulse 1s infinite alternate; }
   .st-down .dot { background: var(--down); }
   @keyframes pulse { from { opacity: .35; } to { opacity: 1; } }
+  .spin { display: inline-block; width: 12px; height: 12px; margin-right: 8px;
+          border: 2px solid var(--line); border-top-color: var(--accent);
+          border-radius: 50%; vertical-align: -2px;
+          animation: rot .8s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  td.loading { color: var(--dim); padding: 18px 14px; }
   .st-word { font-weight: 600; font-size: 13px; }
   .st-up .st-word { color: var(--up); }
   .st-starting .st-word { color: var(--starting); }
@@ -83,7 +89,9 @@
   <thead><tr>
     <th>Status</th><th>Service</th><th>URL</th><th>Port</th><th>PID</th><th>Up</th><th>Description</th><th></th>
   </tr></thead>
-  <tbody id="rows"></tbody>
+  <tbody id="rows">
+    <tr class="initrow"><td class="loading" colspan="8"><span class="spin"></span>Loading services&hellip;</td></tr>
+  </tbody>
 </table>
 <h2>Tools (no server)</h2>
 <table>
@@ -227,6 +235,8 @@ async function refresh() {
     if (logSid) fetchLog();
   } catch (e) {
     metaEl.textContent = 'hub unreachable';
+    const init = rowsEl.querySelector('.initrow');
+    if (init) init.innerHTML = '<td class="loading" colspan="8">waiting for hub&hellip;</td>';
   }
 }
 
