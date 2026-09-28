@@ -72,6 +72,7 @@
   <span class="spacer"></span>
   <button id="startAll" class="primary">Start all</button>
   <button id="stopAll" class="danger">Stop all</button>
+  <button id="stopHub" class="danger">Stop hub</button>
   <span id="meta"></span>
 </header>
 <div id="notice"></div>
@@ -228,6 +229,11 @@ async function refresh() {
 
 document.getElementById('startAll').onclick = () => all('start');
 document.getElementById('stopAll').onclick = () => all('stop');
+document.getElementById('stopHub').onclick = async () => {
+  if (!confirm('Stop the project-hub server itself? The services keep running.')) return;
+  await post('/api/shutdown');
+  notice('project-hub stopped - this page is now dead. Restart it with start-hub.bat');
+};
 refresh();
 setInterval(refresh, 2500);
 </script>

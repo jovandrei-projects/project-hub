@@ -55,6 +55,12 @@ KILLABLE_IMAGES = {
     "node.exe", "powershell.exe", "pwsh.exe", "cmd.exe",
 }
 
+# When the hub runs under pythonw it owns no console, so every child console
+# app (netstat, tasklist, taskkill - not just the services) gets a fresh,
+# VISIBLE window unless this flag is passed. That was the terminal-flicker
+# storm: one window per subprocess per status poll.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
 
 def port_open(port, timeout=0.4):
     try:
@@ -69,7 +75,7 @@ def listeners_by_port():
     try:
         out = subprocess.run(
             ["netstat", "-ano", "-p", "tcp"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=15, creationflags=NO_WINDOW,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return {}
@@ -94,7 +100,7 @@ def image_name(pid):
     try:
         out = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=15, creationflags=NO_WINDOW,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return None
@@ -185,7 +191,7 @@ class Hub:
         env.update(spec.get("env", {}))
         kwargs = {}
         if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            kwargs["creationflags"] = NO_WINDOW
         logf = self._open_service_log(sid)
         try:
             subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
@@ -217,7 +223,7 @@ class Hub:
             if image.lower() in KILLABLE_IMAGES:
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
-                    capture_output=True, timeout=15,
+                    capture_output=True, timeout=15, creationflags=NO_WINDOW,
                 )
                 killed.append({"pid": pid, "image": image})
             else:
@@ -368,6 +374,9 @@ class Handler(BaseHTTPRequestHandler):
         parts = self.path.strip("/").split("/")
         if parts == ["api", "start-all"]:
             self._json(200, {"ok": True, "results": self.hub.start_all()})
+        elif parts == ["api", "shutdown"]:
+            self._json(200, {"ok": True, "note": "hub shutting down"})
+            threading.Timer(0.4, self.server.shutdown).start()
         elif parts == ["api", "stop-all"]:
             self._json(200, {"ok": True, "results": self.hub.stop_all()})
         elif len(parts) == 4 and parts[:2] == ["api", "services"] and parts[3] in ("start", "stop", "restart"):

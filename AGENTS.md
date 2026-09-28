@@ -43,7 +43,8 @@ start-hub-hidden.vbs            no window; the Startup-folder shortcut
 
 To stop auto-starting at login, delete `project-hub.lnk` from the Startup
 folder (`shell:startup` in Explorer). To auto-start only the hub, remove
-`--start-all` from the vbs.
+`--start-all` from the vbs. To stop the hub itself: the page's **Stop hub**
+button, or `POST /api/shutdown` - services keep running either way.
 
 Adding a service = one entry in `services.json` (`id`, `name`, `description`,
 `port`, `url`, `start.command` + `start.cwd` relative to `C:\Projects`,
@@ -85,6 +86,11 @@ a `LOG=` line). Projects without a server go in `tools`.
    resulting WinError 10053/10054 traceback is the client disappearing, not a
    bug. `_json`/`_html` swallow ConnectionError and `handle_error` drops
    whatever else it leaves.
+9. **A console-less hub gives every child console app a VISIBLE window.**
+   Under pythonw (start-hub-hidden.vbs) each `subprocess.run` - netstat,
+   tasklist, taskkill - opened a console that flashed open and shut, ~7 per
+   `/api/status` poll. `NO_WINDOW` must go on every spawn, not just the
+   services themselves.
 
 ## The task workspace - read before starting work
 

@@ -26,6 +26,7 @@ One phase at a time, in order. Mark items `[x]` as they land.
 - [x] Log tail in the UI: per-row Log button tails `logs/<id>.log`; VocalCoach's own `.runtime` log is found through `log_instance` in services.json
 - [ ] Remember "was started by hub" so stop could warn before killing a user-started instance
 - [x] Run at login: `start-hub-hidden.vbs` via `Startup\project-hub.lnk` runs `pythonw hub.py --no-browser --start-all`; hub logs to `logs/hub.log` under pythonw
+- [x] Stop-hub control: POST `/api/shutdown` + **Stop hub** button in the header (services keep running)
 
 ---
 
