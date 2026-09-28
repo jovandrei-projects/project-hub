@@ -54,6 +54,17 @@
         "command": ["python", "-m", "http.server", "8780", "--bind", "127.0.0.1"],
         "cwd": "model-compare"
       }
+    },
+    {
+      "id": "thermalwatch",
+      "name": "thermalwatch",
+      "description": "Live temperature dashboard: GPU via nvidia-smi, history charts.",
+      "port": 8785,
+      "url": "http://127.0.0.1:8785/",
+      "start": {
+        "command": ["python", "app.py", "--no-browser"],
+        "cwd": "thermalwatch"
+      }
     }
   ],
   "tools": [
@@ -66,11 +77,6 @@
       "name": "nirvana-concert-images",
       "description": "Resumable scraper archiving every LiveNIRVANA concert image.",
       "entry": "python scrape.py"
-    },
-    {
-      "name": "sysmon",
-      "description": "Live temperature readout: GPU via nvidia-smi, sparkline history.",
-      "entry": "python temps.py"
     }
   ]
 }
