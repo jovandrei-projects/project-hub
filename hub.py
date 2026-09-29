@@ -23,6 +23,7 @@ How it works:
 """
 import argparse
 import csv
+import ctypes
 import http.client
 import io
 import json
@@ -60,6 +61,15 @@ KILLABLE_IMAGES = {
 # VISIBLE window unless this flag is passed. That was the terminal-flicker
 # storm: one window per subprocess per status poll.
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
+
+def is_admin():
+    if os.name != "nt":
+        return True
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except OSError:
+        return False
 
 
 def port_open(port, timeout=0.4):
@@ -124,6 +134,7 @@ def tail_lines(path, n, max_bytes=LOG_TAIL_BYTES):
 class Hub:
     def __init__(self, port):
         self.port = port
+        self.elevated = is_admin()
         self.boot_time = time.time()
         self.lock = threading.Lock()
         self.start_requested = {}  # id -> epoch of last hub-initiated start
@@ -206,7 +217,8 @@ class Hub:
                 "listeners": listeners,
                 "up_since": since,
             })
-        return {"services": rows, "tools": self.tools, "now": now}
+        return {"services": rows, "tools": self.tools, "now": now,
+                "elevated": self.elevated}
 
     def start(self, sid):
         s = self.by_id.get(sid)
@@ -256,11 +268,19 @@ class Hub:
             if image is None:
                 continue
             if image.lower() in KILLABLE_IMAGES:
-                subprocess.run(
+                tk = subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
-                    capture_output=True, timeout=15, creationflags=NO_WINDOW,
+                    capture_output=True, text=True, timeout=15,
+                    creationflags=NO_WINDOW,
                 )
-                killed.append({"pid": pid, "image": image})
+                if tk.returncode == 0:
+                    killed.append({"pid": pid, "image": image})
+                else:
+                    msg = (tk.stderr or tk.stdout or "").strip()
+                    refused.append({"pid": pid, "image": image,
+                                    "reason": ("access denied - process is elevated"
+                                               if "denied" in msg.lower()
+                                               else msg or "taskkill failed")})
             else:
                 refused.append({"pid": pid, "image": image})
         deadline = time.time() + STOP_WAIT_SECONDS
@@ -275,9 +295,36 @@ class Hub:
                   "killed": killed, "still_up": still_up}
         if refused:
             result["refused"] = refused
-            result["error"] = ("refused to kill non-project listener(s): "
-                               + ", ".join(f"{r['image']} (pid {r['pid']})" for r in refused))
+            result["error"] = ("could not stop listener(s): "
+                               + ", ".join(f"{r['image']} (pid {r['pid']}"
+                                           + (f" - {r['reason']}" if r.get("reason") else "")
+                                           + ")" for r in refused))
+            result["needs_admin"] = any(
+                "elevated" in (r.get("reason") or "") for r in refused)
         return (200 if result["ok"] else 409), result
+
+    def elevate(self):
+        """Relaunch the hub itself with admin rights via UAC, so service
+        start/stop also works on elevated listeners. The elevated copy runs
+        with --takeover and replaces this process on the same port."""
+        if os.name != "nt":
+            return 400, {"ok": False, "error": "elevation is Windows-only"}
+        if self.elevated:
+            return 200, {"ok": True, "note": "already running elevated"}
+        args = [str(ROOT / "hub.py"), "--port", str(self.port),
+                "--takeover", "--no-browser"]
+        arglist = ",".join("'" + a.replace("'", "''") + "'" for a in args)
+        ps = (f"Start-Process -FilePath '{sys.executable}' "
+              f"-ArgumentList {arglist} -Verb RunAs "
+              f"-WorkingDirectory '{ROOT}'")
+        try:
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", ps],
+                creationflags=NO_WINDOW)
+        except OSError as exc:
+            return 500, {"ok": False, "error": str(exc)}
+        return 200, {"ok": True,
+                     "note": "elevation requested - approve the UAC prompt"}
 
     def restart(self, sid):
         code, res = self.stop(sid)
@@ -414,6 +461,9 @@ class Handler(BaseHTTPRequestHandler):
             threading.Timer(0.4, self.server.shutdown).start()
         elif parts == ["api", "stop-all"]:
             self._json(200, {"ok": True, "results": self.hub.stop_all()})
+        elif parts == ["api", "elevate"]:
+            code, res = self.hub.elevate()
+            self._json(code, res)
         elif len(parts) == 4 and parts[:2] == ["api", "services"] and parts[3] in ("start", "stop", "restart"):
             sid, action = parts[2], parts[3]
             if sid not in self.hub.by_id:
@@ -456,6 +506,10 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--start-all", action="store_true",
                     help="start every managed service once the hub is up")
+    ap.add_argument("--takeover", action="store_true",
+                    help="kill existing project listeners on the port before "
+                         "binding - used by the elevated relaunch because the "
+                         "old hub still holds the socket")
     args = ap.parse_args()
 
     if sys.stdout is None:
@@ -465,7 +519,27 @@ def main():
             LOG_DIR / "hub.log", "a", encoding="utf-8", buffering=1)
 
     url = f"http://127.0.0.1:{args.port}/"
-    if already_running(args.port):
+    if args.takeover:
+        # An older hub still holds the port (SO_REUSEADDR would otherwise let
+        # both share it and split requests). Kill project-image listeners;
+        # never kill a foreign one - refuse to bind instead.
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            for pid in listeners_by_port().get(args.port, ()):
+                if pid == os.getpid():
+                    continue
+                img = image_name(pid)
+                if img and img.lower() in KILLABLE_IMAGES:
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                                   capture_output=True, creationflags=NO_WINDOW)
+            if not port_open(args.port):
+                break
+            time.sleep(0.4)
+        if port_open(args.port):
+            print(f"port {args.port} is held by a non-project process - "
+                  "refusing to share it; not taking over")
+            return
+    elif already_running(args.port):
         print(f"project-hub is already running at {url}")
         if not args.no_browser:
             webbrowser.open(url)

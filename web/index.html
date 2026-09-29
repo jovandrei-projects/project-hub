@@ -78,7 +78,9 @@
 <body>
 <header>
   <h1>C:<span class="slash">\</span>Projects</h1>
+  <span id="elevTag" style="color:var(--up);font-size:12px;font-weight:600"></span>
   <span class="spacer"></span>
+  <button id="elevate" class="primary" hidden title="Relaunch the hub with admin rights so elevated services can be managed">Run as admin</button>
   <button id="startAll" class="primary">Start all</button>
   <button id="stopAll" class="danger">Stop all</button>
   <button id="stopHub" class="danger">Stop hub</button>
@@ -140,7 +142,12 @@ async function post(path) {
 async function action(sid, act) {
   notice('');
   const res = await post(`/api/services/${sid}/${act}`);
-  if (!res.body.ok) notice(res.body.error || `HTTP ${res.code}`);
+  if (!res.body.ok) {
+    let msg = res.body.error || `HTTP ${res.code}`;
+    if (res.body.needs_admin)
+      msg += '\nThe process is running elevated - use "Run as admin" to manage it from here.';
+    notice(msg);
+  }
   setTimeout(refresh, 700);
 }
 
@@ -222,6 +229,8 @@ async function refresh() {
     const data = await r.json();
     rowsEl.innerHTML = '';
     data.services.forEach(s => rowsEl.appendChild(renderRow(s)));
+    document.getElementById('elevate').hidden = data.elevated !== false;
+    document.getElementById('elevTag').textContent = data.elevated ? 'admin' : '';
     if (!toolRowsEl.dataset.done) {
       data.tools.forEach(t => {
         const tr = document.createElement('tr');
@@ -240,6 +249,14 @@ async function refresh() {
   }
 }
 
+document.getElementById('elevate').onclick = async (e) => {
+  const b = e.target;
+  b.disabled = true;
+  const res = await post('/api/elevate');
+  notice(res.body.error ||
+    'UAC prompt requested - approve it, then this page reconnects to the elevated hub.');
+  setTimeout(() => { b.disabled = false; }, 15000);
+};
 document.getElementById('startAll').onclick = () => all('start');
 document.getElementById('stopAll').onclick = () => all('stop');
 document.getElementById('stopHub').onclick = async () => {

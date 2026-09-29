@@ -88,7 +88,16 @@ a `LOG=` line). Projects without a server go in `tools`. The hub re-reads
    resulting WinError 10053/10054 traceback is the client disappearing, not a
    bug. `_json`/`_html` swallow ConnectionError and `handle_error` drops
    whatever else it leaves.
-9. **A console-less hub gives every child console app a VISIBLE window.**
+9. **An unelevated hub cannot kill elevated listeners.** `taskkill` gets
+   access-denied; `stop` surfaces that as `needs_admin` in the response and
+   the UI points at the header's **Run as admin** button. `POST /api/elevate`
+   spawns `hub.py --takeover` via `Start-Process -Verb RunAs`; takeover kills
+   KILLABLE_IMAGE listeners on the port (the old unelevated hub) but refuses
+   to bind over a foreign process. Children of the elevated hub are elevated,
+   so services started afterward get admin features (the monitor's ETW
+   per-process traffic and packet capture). The Startup shortcut still
+   launches unelevated at login - elevation is per-session, opt-in.
+10. **A console-less hub gives every child console app a VISIBLE window.**
    Under pythonw (start-hub-hidden.vbs) each `subprocess.run` - netstat,
    tasklist, taskkill - opened a console that flashed open and shut, ~7 per
    `/api/status` poll. `NO_WINDOW` must go on every spawn, not just the

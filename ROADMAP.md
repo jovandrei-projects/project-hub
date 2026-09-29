@@ -28,6 +28,7 @@ One phase at a time, in order. Mark items `[x]` as they land.
 - [x] Run at login: `start-hub-hidden.vbs` via `Startup\project-hub.lnk` runs `pythonw hub.py --no-browser --start-all`; hub logs to `logs/hub.log` under pythonw
 - [x] Stop-hub control: POST `/api/shutdown` + **Stop hub** button in the header (services keep running)
 - [x] `services.json` hot-reload: mtime checked in `snapshot()`, so adding a service needs no hub restart (verified 2026-09-29: edit and revert both appeared on the next `/api/status` poll)
+- [x] Elevated management: **Run as admin** header button → `POST /api/elevate` → UAC spawns the hub elevated with `--takeover`, which kills the old hub's listener and binds the port. Stop on an elevated listener reports `needs_admin` instead of a silent failure. Verified 2026-09-29: unelevated stop on the elevated monitor returned `needs_admin`; after elevation the hub stopped it and started a fresh elevated instance (monitor reported `elevated: true`).
 
 ---
 
