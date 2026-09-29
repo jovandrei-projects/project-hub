@@ -66,6 +66,17 @@
         "command": ["python", "app.py", "--no-browser"],
         "cwd": "thermalwatch"
       }
+    },
+    {
+      "id": "video-tools",
+      "name": "video-tools",
+      "description": "Recording library status, transcript viewer with audio playback, and pipeline run buttons.",
+      "port": 8790,
+      "url": "http://127.0.0.1:8790/",
+      "start": {
+        "command": ["python", "app.py", "--no-browser"],
+        "cwd": "video-tools"
+      }
     }
   ],
   "tools": [
