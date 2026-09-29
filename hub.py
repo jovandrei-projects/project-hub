@@ -126,19 +126,54 @@ class Hub:
         self.port = port
         self.boot_time = time.time()
         self.lock = threading.Lock()
-        self.registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-        self.services = self.registry["services"]
-        self.tools = self.registry.get("tools", [])
-        self.by_id = {s["id"]: s for s in self.services}
         self.start_requested = {}  # id -> epoch of last hub-initiated start
         self.up_since = {}         # id -> epoch first seen up by this hub
+        self._registry_mtime = 0.0
+        self.load_registry()
         for s in self.services:
             if s.get("self"):
-                s["port"] = port
-                s["url"] = f"http://127.0.0.1:{port}/"
                 self.up_since[s["id"]] = self.boot_time
 
+    def load_registry(self):
+        """(Re)read services.json. Runs at boot and again whenever snapshot()
+        sees the file's mtime change, so adding a service never needs a hub
+        restart."""
+        reg = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        for s in reg["services"]:
+            if s.get("self"):
+                s["port"] = self.port
+                s["url"] = f"http://127.0.0.1:{self.port}/"
+        with self.lock:
+            self.registry = reg
+            self.services = reg["services"]
+            self.tools = reg.get("tools", [])
+            self.by_id = {s["id"]: s for s in self.services}
+            # Drop bookkeeping for services that left the registry.
+            live = set(self.by_id)
+            self.start_requested = {
+                k: v for k, v in self.start_requested.items() if k in live}
+            self.up_since = {
+                k: v for k, v in self.up_since.items() if k in live}
+        try:
+            self._registry_mtime = REGISTRY_PATH.stat().st_mtime
+        except OSError:
+            self._registry_mtime = 0.0
+
+    def maybe_reload_registry(self):
+        try:
+            mt = REGISTRY_PATH.stat().st_mtime
+        except OSError:
+            return
+        if mt != self._registry_mtime:
+            try:
+                self.load_registry()
+                print("services.json changed - registry reloaded")
+            except (OSError, json.JSONDecodeError) as e:
+                # Half-written file: keep the old registry, retry next poll.
+                print(f"services.json reload failed ({e}); keeping old registry")
+
     def snapshot(self):
+        self.maybe_reload_registry()
         portmap = listeners_by_port()
         now = time.time()
         rows = []

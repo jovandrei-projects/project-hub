@@ -52,7 +52,9 @@ optional `start.env`). `"python"` as the first command word resolves to the
 interpreter running the hub. A service's stdout/stderr lands in
 `logs/<id>.log`; if it keeps its own log elsewhere, point at it with `log`
 (path relative to `C:\Projects`) or `log_instance` (a KEY=value file holding
-a `LOG=` line). Projects without a server go in `tools`.
+a `LOG=` line). Projects without a server go in `tools`. The hub re-reads
+`services.json` automatically when its mtime changes - no restart needed.
+(Before 2026-09-29 the registry was loaded once at boot.)
 
 ## Traps
 
