@@ -77,6 +77,17 @@
         "command": ["python", "app.py", "--no-browser"],
         "cwd": "video-tools"
       }
+    },
+    {
+      "id": "senior-safety-mx",
+      "name": "senior-safety-mx",
+      "description": "Emergency/fall-detection device catalog for Mexico: evidence, prices, ratings.",
+      "port": 8795,
+      "url": "http://127.0.0.1:8795/",
+      "start": {
+        "command": ["python", "app.py", "--no-browser"],
+        "cwd": "senior-safety-mx"
+      }
     }
   ],
   "tools": [
