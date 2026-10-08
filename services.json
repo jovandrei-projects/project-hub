@@ -88,6 +88,17 @@
         "command": ["python", "app.py", "--no-browser"],
         "cwd": "senior-safety-mx"
       }
+    },
+    {
+      "id": "money-plan",
+      "name": "money-plan",
+      "description": "Conscious-spending dashboard from Monarch exports: CSP buckets, debt countdown, category averages.",
+      "port": 8800,
+      "url": "http://127.0.0.1:8800/",
+      "start": {
+        "command": ["python", "app.py"],
+        "cwd": "money-plan"
+      }
     }
   ],
   "tools": [
