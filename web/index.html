@@ -100,6 +100,12 @@
   <thead><tr><th>Project</th><th>Description</th><th>Run</th></tr></thead>
   <tbody id="toolRows"></tbody>
 </table>
+<h2>Storage</h2>
+<div id="diskmeta" style="color:var(--dim);font-size:12px;margin-bottom:6px"></div>
+<table>
+  <thead><tr><th>Project</th><th>Logs</th><th>Data</th></tr></thead>
+  <tbody id="storageRows"></tbody>
+</table>
 <div id="logpanel">
   <div id="loghead">
     <span id="logtitle"></span>
@@ -264,8 +270,40 @@ document.getElementById('stopHub').onclick = async () => {
   await post('/api/shutdown');
   notice('project-hub stopped - this page is now dead. Restart it with start-hub.bat');
 };
+function fmtBytes(n) {
+  if (n == null) return '';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i ? n.toFixed(1) : Math.round(n)) + ' ' + u[i];
+}
+
+async function refreshStorage() {
+  try {
+    const r = await fetch('/api/storage');
+    const d = await r.json();
+    const free = fmtBytes(d.disk.free), total = fmtBytes(d.disk.total);
+    document.getElementById('diskmeta').textContent =
+      `drive free ${free} of ${total}` + (d.disk.warn ? ' - LOW' : '');
+    document.getElementById('diskmeta').style.color = d.disk.warn ? 'var(--down)' : 'var(--dim)';
+    const body = document.getElementById('storageRows');
+    body.innerHTML = '';
+    d.projects.forEach(p => {
+      const hot = p.logs.bytes > d.warn_logs_bytes;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="name">${esc(p.project)}</td>` +
+        `<td${hot ? ' style="color:var(--down);font-weight:600"' : ''}>` +
+        `${fmtBytes(p.logs.bytes)}${p.logs.truncated ? '+' : ''}</td>` +
+        `<td>${fmtBytes(p.data.bytes)}${p.data.truncated ? '+' : ''}</td>`;
+      body.appendChild(tr);
+    });
+  } catch (e) { /* hub unreachable - the main poll already reports that */ }
+}
+
 refresh();
 setInterval(refresh, 2500);
+refreshStorage();
+setInterval(refreshStorage, 60000);
 </script>
 </body>
 </html>

@@ -141,6 +141,10 @@ Sessions end without warning. Work accordingly:
 ## Verifying a change
 
 ```
+python run_tests.py                  unit + smoke suite (logs/tests.log);
+                                     spawns/stops a real fixture service and
+                                     boots the hub on port 18760 (--quick
+                                     skips those)
 python -m py_compile hub.py            syntax
 python hub.py --no-browser &           then:
 curl http://127.0.0.1:8760/api/ping    -> {"app": "project-hub"}

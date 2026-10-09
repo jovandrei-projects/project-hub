@@ -28,6 +28,7 @@ import http.client
 import io
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -50,6 +51,8 @@ STOP_WAIT_SECONDS = 10
 LOG_TAIL_MAX = 1000
 LOG_TAIL_BYTES = 512 * 1024
 LOG_ROTATE_BYTES = 4 * 1024 * 1024
+LOG_WARN_BYTES = 256 * 1024 * 1024      # one project's logs/ above this flags
+DISK_WARN_FREE = 20 * 1024 ** 3        # free space under ~20 GiB flags
 
 KILLABLE_IMAGES = {
     "python.exe", "pythonw.exe", "python3.exe", "py.exe",
@@ -118,6 +121,49 @@ def image_name(pid):
         if len(row) >= 2 and row[1].strip() == str(pid):
             return row[0]
     return None
+
+
+def _dir_size(path, limit=200000):
+    """(bytes, file count, truncated) under path; bounded so a giant data/
+    dir cannot stall /api/storage."""
+    total, count = 0, 0
+    for dirpath, _dirs, files in os.walk(path):
+        for fn in files:
+            count += 1
+            if count > limit:
+                return total, count, True
+            try:
+                total += os.path.getsize(os.path.join(dirpath, fn))
+            except OSError:
+                pass
+    return total, count, False
+
+
+def storage_report():
+    """Per-project logs/ and data/ footprint plus drive free space - the hub
+    is where a runaway log gets noticed. Sizes only, never contents."""
+    usage = shutil.disk_usage(str(ROOT))
+    projects = []
+    for proj in sorted(PROJECTS.iterdir()):
+        if not proj.is_dir() or proj.name.startswith(".") \
+                or proj.name == "_templates":
+            continue
+        row = {"project": proj.name}
+        for sub in ("logs", "data"):
+            d = proj / sub
+            total, count, truncated = \
+                _dir_size(d) if d.is_dir() else (0, 0, False)
+            row[sub] = {"bytes": total, "files": count,
+                        "truncated": truncated}
+        projects.append(row)
+    hub_logs = [{"file": p.name, "bytes": p.stat().st_size}
+                for p in sorted(LOG_DIR.glob("*.log")) if p.is_file()]
+    return {"now": time.time(),
+            "disk": {"total": usage.total, "free": usage.free,
+                     "warn": usage.free < DISK_WARN_FREE},
+            "warn_logs_bytes": LOG_WARN_BYTES,
+            "hub_logs": hub_logs,
+            "projects": projects}
 
 
 def tail_lines(path, n, max_bytes=LOG_TAIL_BYTES):
@@ -442,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"app": "project-hub", "port": self.hub.port})
         elif url.path == "/api/status":
             self._json(200, self.hub.snapshot())
+        elif url.path == "/api/storage":
+            self._json(200, storage_report())
         elif len(parts) == 4 and parts[:2] == ["api", "services"] and parts[3] == "log":
             lines = parse_qs(url.query).get("lines", ["150"])[0]
             code, res = self.hub.log_tail(parts[2], lines)
