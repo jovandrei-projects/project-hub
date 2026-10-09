@@ -19,3 +19,4 @@ If the figures are not available at the end of a session, write the row with
 the counts left as `n/a` rather than skipping it, so the session is still
 accounted for.
 | hub.py + index.html: Run as admin elevation (/api/elevate -> --takeover UAC relaunch; needs_admin surfaced on denied taskkill; admin badge) - verified live stop/start of elevated monitor | n/a | n/a | n/a | n/a |
+| project-hub / browser smoke test (playwright) | n/a | n/a | n/a | n/a |
