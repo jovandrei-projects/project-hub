@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs the project's quick suite before pushing.
+# Override when needed: git push --no-verify
+echo "pre-push: python run_tests.py --quick"
+python run_tests.py --quick || {
+    echo "pre-push: tests failed - push aborted (override: git push --no-verify)"
+    exit 1
+}
