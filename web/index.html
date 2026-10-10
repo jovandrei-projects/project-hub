@@ -199,7 +199,9 @@ function renderRow(s) {
   const tr = document.createElement('tr');
   tr.className = 'st-' + s.state;
   const word = {up: 'Running', starting: 'Starting', down: 'Stopped'}[s.state] || s.state;
-  const pids = s.listeners.map(l => esc(l.image) + ' ' + l.pid).join('<br>');
+  const pids = s.listeners.map(l =>
+    esc(l.image) + ' ' + l.pid +
+    (l.rss_mb != null ? ' &middot; ' + l.rss_mb + ' MB' : '')).join('<br>');
   const link = s.state === 'up' || s.is_self
     ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a>`
     : `<a class="dead">${esc(s.url)}</a>`;

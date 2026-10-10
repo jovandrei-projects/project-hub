@@ -108,19 +108,26 @@ def listeners_by_port():
     return ports
 
 
-def image_name(pid):
-    """Image name for a PID via tasklist, or None if the process is gone."""
+def proc_stats(pid):
+    """(image, mem_kb) for a PID via one tasklist CSV row - tasklist already
+    returns the working set, so asking for it costs nothing extra."""
     try:
         out = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, timeout=15, creationflags=NO_WINDOW,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        return None
+        return None, None
     for row in csv.reader(io.StringIO(out)):
-        if len(row) >= 2 and row[1].strip() == str(pid):
-            return row[0]
-    return None
+        if len(row) >= 5 and row[1].strip() == str(pid):
+            digits = row[4].split()[0].replace(",", "")
+            return row[0], int(digits) if digits.isdigit() else None
+    return None, None
+
+
+def image_name(pid):
+    """Image name for a PID via tasklist, or None if the process is gone."""
+    return proc_stats(pid)[0]
 
 
 def _dir_size(path, limit=200000):
@@ -236,9 +243,14 @@ class Hub:
         rows = []
         for s in self.services:
             pids = sorted(portmap.get(s["port"], ()))
-            listeners = [
-                {"pid": pid, "image": image_name(pid) or "?"} for pid in pids
-            ]
+            listeners = []
+            for pid in pids:
+                image, mem_kb = proc_stats(pid)
+                listeners.append({
+                    "pid": pid,
+                    "image": image or "?",
+                    "rss_mb": round(mem_kb / 1024) if mem_kb else None,
+                })
             up = port_open(s["port"])
             with self.lock:
                 if up:
