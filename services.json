@@ -92,9 +92,9 @@
     {
       "id": "mobile-bridge",
       "name": "mobile-apps bridge",
-      "description": "Personal Hub LAN bridge: token-authed proxy that lets the phone reach these services (ports 8762-8772).",
+      "description": "Personal Hub LAN bridge + Notes-to-Dev dashboard (notes-ui). Token-authed proxy, ports 8762-8772.",
       "port": 8762,
-      "url": "http://127.0.0.1:8762/",
+      "url": "http://127.0.0.1:8762/notes-ui",
       "start": {
         "command": ["python", "lan-bridge.py"],
         "cwd": "mobile-apps\\pc-bridge"

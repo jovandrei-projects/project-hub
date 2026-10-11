@@ -266,6 +266,12 @@ class Hub:
             rows.append({
                 "id": s["id"],
                 "name": s["name"],
+                # Project folder this service belongs to (first component of
+                # start.cwd; the hub itself lives in project-hub). Lets the UI
+                # link a status row to its storage row.
+                "project": (s.get("start", {}).get("cwd", "")
+                            .replace("/", "\\").split("\\")[0])
+                           or (ROOT.name if s.get("self") else s["name"]),
                 "url": s["url"],
                 "port": s["port"],
                 "description": s["description"],
@@ -500,6 +506,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"app": "project-hub", "port": self.hub.port})
         elif url.path == "/api/status":
             self._json(200, self.hub.snapshot())
+        elif url.path == "/api/registry":
+            # Static service info only - answers instantly, so the page can
+            # paint named rows while /api/status is still probing ports.
+            self._json(200, {"services": [
+                {"id": s["id"], "name": s["name"], "url": s["url"],
+                 "port": s["port"], "description": s["description"],
+                 "managed": bool(s.get("start")), "is_self": bool(s.get("self")),
+                 "project": (s.get("start", {}).get("cwd", "")
+                             .replace("/", "\\").split("\\")[0])
+                            or (ROOT.name if s.get("self") else s["name"])}
+                for s in self.hub.services], "tools": self.hub.tools})
         elif url.path == "/api/storage":
             self._json(200, storage_report())
         elif len(parts) == 4 and parts[:2] == ["api", "services"] and parts[3] == "log":

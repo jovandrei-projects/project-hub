@@ -51,6 +51,9 @@
           animation: rot .8s linear infinite; }
   @keyframes rot { to { transform: rotate(360deg); } }
   td.loading { color: var(--dim); padding: 18px 14px; }
+  tr.hl td { background: #242b38; }
+  tr.st-checking .dot { background: var(--line); }
+  tr.st-checking .st-word { color: var(--dim); }
   .st-word { font-weight: 600; font-size: 13px; }
   .st-up .st-word { color: var(--up); }
   .st-starting .st-word { color: var(--starting); }
@@ -198,15 +201,18 @@ async function fetchLog() {
 function renderRow(s) {
   const tr = document.createElement('tr');
   tr.className = 'st-' + s.state;
-  const word = {up: 'Running', starting: 'Starting', down: 'Stopped'}[s.state] || s.state;
-  const pids = s.listeners.map(l =>
+  if (s.project) tr.dataset.proj = s.project;
+  const word = {up: 'Running', starting: 'Starting', down: 'Stopped', checking: 'Checking'}[s.state] || s.state;
+  const pids = (s.listeners || []).map(l =>
     esc(l.image) + ' ' + l.pid +
     (l.rss_mb != null ? ' &middot; ' + l.rss_mb + ' MB' : '')).join('<br>');
   const link = s.state === 'up' || s.is_self
     ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a>`
     : `<a class="dead">${esc(s.url)}</a>`;
   let btns = '';
-  if (!s.is_self) {
+  if (s.state === 'checking') {
+    // paint only - buttons appear once real status lands
+  } else if (!s.is_self) {
     if (s.managed) {
       btns = s.state === 'down'
         ? `<button onclick="action('${s.id}','start')">Start</button>`
@@ -216,7 +222,7 @@ function renderRow(s) {
       btns = '<span style="color:var(--dim);font-size:12px">manual</span>';
     }
   }
-  if (s.managed || s.is_self) {
+  if (s.state !== 'checking' && (s.managed || s.is_self)) {
     btns += `<button onclick="showLog('${s.id}')">Log</button>`;
   }
   tr.innerHTML =
@@ -231,12 +237,50 @@ function renderRow(s) {
   return tr;
 }
 
+let lastServices = [];  // latest status rows; also drives storage ordering
+
+function paint(services) {
+  rowsEl.innerHTML = '';
+  services.forEach(s => rowsEl.appendChild(renderRow(s)));
+}
+
+// Highlight the sibling row (status <-> storage) for the same project.
+function setHl(proj, on) {
+  document.querySelectorAll(`tr[data-proj="${proj}"]`)
+    .forEach(tr => tr.classList.toggle('hl', on));
+}
+document.addEventListener('mouseover', e => {
+  const tr = e.target.closest('tr[data-proj]');
+  if (tr) setHl(tr.dataset.proj, true);
+});
+document.addEventListener('mouseout', e => {
+  const tr = e.target.closest('tr[data-proj]');
+  if (tr) setHl(tr.dataset.proj, false);
+});
+
+async function firstPaint() {
+  // Never show a blank table: prefer the last status from a previous visit,
+  // else skeleton 'checking' rows from the static registry (instant answer).
+  try {
+    const cached = JSON.parse(localStorage.getItem('hubStatus') || 'null');
+    if (cached && cached.services) { paint(cached.services); return; }
+  } catch (e) { /* corrupt cache - fall through to skeleton */ }
+  try {
+    const r = await fetch('/api/registry');
+    const d = await r.json();
+    paint(d.services.map(s => ({...s, state: 'checking', listeners: []})));
+  } catch (e) { /* hub unreachable - the initrow message stays */ }
+}
+
 async function refresh() {
   try {
     const r = await fetch('/api/status');
     const data = await r.json();
-    rowsEl.innerHTML = '';
-    data.services.forEach(s => rowsEl.appendChild(renderRow(s)));
+    lastServices = data.services;
+    try {
+      localStorage.setItem('hubStatus', JSON.stringify({services: data.services}));
+    } catch (e) { /* storage full - non-fatal */ }
+    paint(data.services);
     document.getElementById('elevate').hidden = data.elevated !== false;
     document.getElementById('elevTag').textContent = data.elevated ? 'admin' : '';
     if (!toolRowsEl.dataset.done) {
@@ -290,9 +334,15 @@ async function refreshStorage() {
     document.getElementById('diskmeta').style.color = d.disk.warn ? 'var(--down)' : 'var(--dim)';
     const body = document.getElementById('storageRows');
     body.innerHTML = '';
+    // Same order as the status table; non-service projects sort after.
+    const order = new Map(lastServices.map((s, i) => [s.project, i]));
+    d.projects.sort((a, b) =>
+      (order.get(a.project) ?? 999) - (order.get(b.project) ?? 999)
+      || a.project.localeCompare(b.project));
     d.projects.forEach(p => {
       const hot = p.logs.bytes > d.warn_logs_bytes;
       const tr = document.createElement('tr');
+      tr.dataset.proj = p.project;
       tr.innerHTML = `<td class="name">${esc(p.project)}</td>` +
         `<td${hot ? ' style="color:var(--down);font-weight:600"' : ''}>` +
         `${fmtBytes(p.logs.bytes)}${p.logs.truncated ? '+' : ''}</td>` +
@@ -302,6 +352,7 @@ async function refreshStorage() {
   } catch (e) { /* hub unreachable - the main poll already reports that */ }
 }
 
+firstPaint();
 refresh();
 setInterval(refresh, 2500);
 refreshStorage();
