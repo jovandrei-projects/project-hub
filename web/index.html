@@ -101,13 +101,17 @@
 <h2>Tools (no server)</h2>
 <table>
   <thead><tr><th>Project</th><th>Description</th><th>Run</th></tr></thead>
-  <tbody id="toolRows"></tbody>
+  <tbody id="toolRows">
+    <tr class="initrow"><td class="loading" colspan="3"><span class="spin"></span>Loading tools&hellip;</td></tr>
+  </tbody>
 </table>
 <h2>Storage</h2>
 <div id="diskmeta" style="color:var(--dim);font-size:12px;margin-bottom:6px"></div>
 <table>
   <thead><tr><th>Project</th><th>Logs</th><th>Data</th></tr></thead>
-  <tbody id="storageRows"></tbody>
+  <tbody id="storageRows">
+    <tr class="initrow"><td class="loading" colspan="3"><span class="spin"></span>Measuring project folders&hellip;</td></tr>
+  </tbody>
 </table>
 <div id="logpanel">
   <div id="loghead">
@@ -269,7 +273,19 @@ async function firstPaint() {
     const r = await fetch('/api/registry');
     const d = await r.json();
     paint(d.services.map(s => ({...s, state: 'checking', listeners: []})));
-  } catch (e) { /* hub unreachable - the initrow message stays */ }
+    // Tools are static too - fill them now rather than waiting for status.
+    if (!toolRowsEl.dataset.done) {
+      toolRowsEl.innerHTML = '';
+      d.tools.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.dataset.proj = t.name;
+        tr.innerHTML = `<td>${esc(t.name)}</td><td class="desc">${esc(t.description)}</td>` +
+                       `<td class="entry">${esc(t.entry)}</td>`;
+        toolRowsEl.appendChild(tr);
+      });
+      toolRowsEl.dataset.done = '1';
+    }
+  } catch (e) { /* hub unreachable - the initrow messages stay */ }
 }
 
 async function refresh() {
@@ -284,8 +300,10 @@ async function refresh() {
     document.getElementById('elevate').hidden = data.elevated !== false;
     document.getElementById('elevTag').textContent = data.elevated ? 'admin' : '';
     if (!toolRowsEl.dataset.done) {
+      toolRowsEl.innerHTML = '';
       data.tools.forEach(t => {
         const tr = document.createElement('tr');
+        tr.dataset.proj = t.name;  // links to the storage row on hover
         tr.innerHTML = `<td>${esc(t.name)}</td><td class="desc">${esc(t.description)}</td>` +
                        `<td class="entry">${esc(t.entry)}</td>`;
         toolRowsEl.appendChild(tr);
